@@ -281,11 +281,10 @@ https://SERVICE_NAME-PROJECT_NUMBER.REGION.run.app
 CHANGE_ME_TO_YOUR_PASSWORD
 ```
 
-最初に試す記事 URL は公開済みである次のどちらかを使っていただくことをおすすめします。サイト構造や bot 対策により本文抽出に失敗する URL があるため、まずは動作確認済みのもので smoke test を完了させてから自由な URL を試してみてください。
+最初に試す記事 URL は公開済みである次のものを使っていただくことをおすすめします。サイト構造や bot 対策により本文抽出に失敗する URL があるため、まずは動作確認済みのもので smoke test を完了させてから自由な URL を試してみてください。
 
 ```text
-https://zenn.dev/ubie_dev/articles/modern-web-guidance
-https://developer.chrome.com/docs/modern-web-guidance/get-started?hl=en
+https://zenn.dev/mbk_digital/articles/db99a38e334462
 ```
 
 次を確認します。
