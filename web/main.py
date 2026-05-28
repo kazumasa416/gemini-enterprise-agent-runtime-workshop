@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Literal, Optional
 from uuid import uuid4
 
+import httpx
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -247,20 +248,23 @@ async def regenerate_graphic(
 
 
 @app.get("/graphics/{session_id}/download")
-async def download_graphic(session_id: str) -> FileResponse:
+async def download_graphic(session_id: str) -> FileResponse | Response:
     graphic = graphics.get(session_id)
     if not graphic:
         raise HTTPException(status_code=404, detail="Graphic not found")
 
     artifact_path = Path(graphic.artifact_path)
-    if not artifact_path.is_file():
-        raise HTTPException(status_code=404, detail="Artifact not found")
+    if artifact_path.is_file():
+        return FileResponse(
+            artifact_path,
+            media_type=graphic.artifact_mime_type,
+            filename=_download_filename(graphic),
+        )
 
-    return FileResponse(
-        artifact_path,
-        media_type=graphic.artifact_mime_type,
-        filename=_download_filename(graphic),
-    )
+    if _is_remote_artifact_url(graphic.artifact_url):
+        return await _download_remote_artifact(graphic)
+
+    raise HTTPException(status_code=404, detail="Artifact not found")
 
 
 @app.get("/jobs/{job_id}", response_class=HTMLResponse)
@@ -344,6 +348,38 @@ def _retarget_job_response(response: HTMLResponse, job_id: str, request: Request
 def _download_filename(graphic: GraphicResult) -> str:
     suffix = Path(graphic.artifact_path).suffix or ".bin"
     return f"graphic-recording-{graphic.session_id[:8]}{suffix}"
+
+
+def _is_remote_artifact_url(url: str) -> bool:
+    return url.startswith("https://")
+
+
+async def _download_remote_artifact(graphic: GraphicResult) -> Response:
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
+            response = await client.get(graphic.artifact_url)
+            response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        logger.warning(
+            "remote_artifact_download_failed session_id=%s status_code=%s",
+            graphic.session_id,
+            exc.response.status_code,
+        )
+        raise HTTPException(status_code=502, detail="Remote artifact download failed") from exc
+    except httpx.HTTPError as exc:
+        logger.warning(
+            "remote_artifact_download_failed session_id=%s error=%s",
+            graphic.session_id,
+            exc,
+        )
+        raise HTTPException(status_code=502, detail="Remote artifact download failed") from exc
+
+    filename = _download_filename(graphic)
+    return Response(
+        content=response.content,
+        media_type=response.headers.get("content-type") or graphic.artifact_mime_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 def _schedule_background_task(coro) -> None:

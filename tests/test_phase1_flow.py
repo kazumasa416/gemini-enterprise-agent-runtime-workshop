@@ -348,6 +348,43 @@ def test_graphic_download_uses_attachment_response(tmp_path):
     assert "graphic-recording-session-" in response.headers["content-disposition"]
 
 
+def test_graphic_download_uses_remote_artifact_when_local_file_is_missing(tmp_path, monkeypatch):
+    from fastapi.responses import Response
+
+    from agent.models import GraphicResult
+    from web import main as web_main
+
+    graphic = GraphicResult(
+        session_id="remote-download",
+        visual_plan=[],
+        artifact_path=str(tmp_path / "missing-runtime-artifact.png"),
+        artifact_url="https://storage.example.com/signed-artifact-url",
+        artifact_mime_type="image/png",
+    )
+
+    async def fake_download_remote_artifact(received_graphic):
+        assert received_graphic is graphic
+        return Response(
+            content=b"remote-png-data",
+            media_type="image/png",
+            headers={"Content-Disposition": 'attachment; filename="remote.png"'},
+        )
+
+    monkeypatch.setattr(web_main, "_download_remote_artifact", fake_download_remote_artifact)
+    web_main.graphics[graphic.session_id] = graphic
+    client = TestClient(app)
+
+    try:
+        response = client.get(f"/graphics/{graphic.session_id}/download")
+    finally:
+        web_main.graphics.pop(graphic.session_id, None)
+
+    assert response.status_code == 200
+    assert response.content == b"remote-png-data"
+    assert response.headers["content-type"] == "image/png"
+    assert "attachment" in response.headers["content-disposition"]
+
+
 def test_adk_backend_adds_narration_progress(monkeypatch):
     monkeypatch.setenv("MOCK_MODE", "true")
     monkeypatch.setenv("MOCK_STEP_DELAY", "0")
