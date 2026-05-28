@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Literal, Optional
 from uuid import uuid4
 
+import httpx
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -247,19 +248,39 @@ async def regenerate_graphic(
 
 
 @app.get("/graphics/{session_id}/download")
-async def download_graphic(session_id: str) -> FileResponse:
+async def download_graphic(session_id: str) -> Response:
     graphic = graphics.get(session_id)
     if not graphic:
         raise HTTPException(status_code=404, detail="Graphic not found")
 
     artifact_path = Path(graphic.artifact_path)
-    if not artifact_path.is_file():
+    if artifact_path.is_file():
+        return FileResponse(
+            artifact_path,
+            media_type=graphic.artifact_mime_type,
+            filename=_download_filename(graphic),
+        )
+
+    if not _is_http_url(graphic.artifact_url):
         raise HTTPException(status_code=404, detail="Artifact not found")
 
-    return FileResponse(
-        artifact_path,
-        media_type=graphic.artifact_mime_type,
-        filename=_download_filename(graphic),
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.get(graphic.artifact_url)
+            response.raise_for_status()
+    except httpx.HTTPError as exc:
+        logger.warning(
+            "Graphic artifact download from URL failed: session_id=%s url=%s error=%s",
+            session_id,
+            graphic.artifact_url,
+            exc,
+        )
+        raise HTTPException(status_code=404, detail="Artifact not found") from exc
+
+    return Response(
+        content=response.content,
+        media_type=response.headers.get("content-type") or graphic.artifact_mime_type,
+        headers={"Content-Disposition": f'attachment; filename="{_download_filename(graphic)}"'},
     )
 
 
@@ -344,6 +365,10 @@ def _retarget_job_response(response: HTMLResponse, job_id: str, request: Request
 def _download_filename(graphic: GraphicResult) -> str:
     suffix = Path(graphic.artifact_path).suffix or ".bin"
     return f"graphic-recording-{graphic.session_id[:8]}{suffix}"
+
+
+def _is_http_url(url: str) -> bool:
+    return url.startswith("https://") or url.startswith("http://")
 
 
 def _schedule_background_task(coro) -> None:

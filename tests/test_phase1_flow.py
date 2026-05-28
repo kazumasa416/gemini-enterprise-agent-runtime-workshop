@@ -348,6 +348,58 @@ def test_graphic_download_uses_attachment_response(tmp_path):
     assert "graphic-recording-session-" in response.headers["content-disposition"]
 
 
+def test_graphic_download_falls_back_to_artifact_url(monkeypatch, tmp_path):
+    import httpx
+
+    from agent.models import GraphicResult
+    from web.main import graphics
+
+    missing_artifact = tmp_path / "remote-artifact.png"
+    artifact_url = "https://storage.googleapis.com/demo-bucket/artifacts/remote-artifact.png"
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return None
+
+        async def get(self, url):
+            assert url == artifact_url
+            return httpx.Response(
+                200,
+                content=b"remote-png-data",
+                headers={"content-type": "image/png"},
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr("web.main.httpx.AsyncClient", FakeAsyncClient)
+
+    graphic = GraphicResult(
+        session_id="remote-artifact",
+        visual_plan=[],
+        artifact_path=str(missing_artifact),
+        artifact_url=artifact_url,
+        artifact_mime_type="image/png",
+    )
+    graphics[graphic.session_id] = graphic
+    client = TestClient(app)
+
+    try:
+        response = client.get(f"/graphics/{graphic.session_id}/download")
+    finally:
+        graphics.pop(graphic.session_id, None)
+
+    assert response.status_code == 200
+    assert response.content == b"remote-png-data"
+    assert response.headers["content-type"] == "image/png"
+    assert "attachment" in response.headers["content-disposition"]
+    assert "graphic-recording-remote-a" in response.headers["content-disposition"]
+
+
 def test_adk_backend_adds_narration_progress(monkeypatch):
     monkeypatch.setenv("MOCK_MODE", "true")
     monkeypatch.setenv("MOCK_STEP_DELAY", "0")
