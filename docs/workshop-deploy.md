@@ -220,7 +220,7 @@ effective_identity=service-887643395015@gcp-sa-aiplatform-re.iam.gserviceaccount
 1 行目に表示された `projects/.../locations/.../reasoningEngines/...` をそのまま `AGENT_RUNTIME_RESOURCE_NAME` に設定します。
 
 > [!WARNING]
-> 下の `...` や数字は例です。`PROJECT_NUMBER` や `RESOURCE_ID` という文字列をそのままコピーしないでください。実際に deploy 出力で表示された 1 行目をそのまま貼り付けます。
+> 上記の `...` や数字は例です。実際に deploy 出力で表示された 1 行目をそのまま貼り付けてください。
 
 ```bash
 # 上の出力の 1 行目 (projects/.../reasoningEngines/...) を貼り付ける
@@ -281,7 +281,7 @@ https://SERVICE_NAME-PROJECT_NUMBER.REGION.run.app
 CHANGE_ME_TO_YOUR_PASSWORD
 ```
 
-最初に試す記事 URL は次のものを使ってください。サイト構造や bot 対策により本文抽出に失敗する URL があるため、まずは動作確認済みのもので smoke test を完了させてから自由な URL を試すことをおすすめします。
+最初に試す記事 URL は公開済みである次のものを使っていただくことをおすすめします。サイト構造や bot 対策により本文抽出に失敗する URL があるため、まずは動作確認済みのもので smoke test を完了させてから自由な URL を試してみてください。
 
 ```text
 https://zenn.dev/mbk_digital/articles/db99a38e334462

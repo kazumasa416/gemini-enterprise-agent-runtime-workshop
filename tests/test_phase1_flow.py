@@ -348,41 +348,56 @@ def test_graphic_download_uses_attachment_response(tmp_path):
     assert "graphic-recording-session-" in response.headers["content-disposition"]
 
 
-def test_graphic_download_uses_remote_artifact_when_local_file_is_missing(tmp_path, monkeypatch):
-    from fastapi.responses import Response
+def test_graphic_download_falls_back_to_artifact_url(monkeypatch, tmp_path):
+    import httpx
 
     from agent.models import GraphicResult
-    from web import main as web_main
+    from web.main import graphics
+
+    missing_artifact = tmp_path / "remote-artifact.png"
+    artifact_url = "https://storage.googleapis.com/demo-bucket/artifacts/remote-artifact.png"
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return None
+
+        async def get(self, url):
+            assert url == artifact_url
+            return httpx.Response(
+                200,
+                content=b"remote-png-data",
+                headers={"content-type": "image/png"},
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr("web.main.httpx.AsyncClient", FakeAsyncClient)
 
     graphic = GraphicResult(
-        session_id="remote-download",
+        session_id="remote-artifact",
         visual_plan=[],
-        artifact_path=str(tmp_path / "missing-runtime-artifact.png"),
-        artifact_url="https://storage.example.com/signed-artifact-url",
+        artifact_path=str(missing_artifact),
+        artifact_url=artifact_url,
         artifact_mime_type="image/png",
     )
-
-    async def fake_download_remote_artifact(received_graphic):
-        assert received_graphic is graphic
-        return Response(
-            content=b"remote-png-data",
-            media_type="image/png",
-            headers={"Content-Disposition": 'attachment; filename="remote.png"'},
-        )
-
-    monkeypatch.setattr(web_main, "_download_remote_artifact", fake_download_remote_artifact)
-    web_main.graphics[graphic.session_id] = graphic
+    graphics[graphic.session_id] = graphic
     client = TestClient(app)
 
     try:
         response = client.get(f"/graphics/{graphic.session_id}/download")
     finally:
-        web_main.graphics.pop(graphic.session_id, None)
+        graphics.pop(graphic.session_id, None)
 
     assert response.status_code == 200
     assert response.content == b"remote-png-data"
     assert response.headers["content-type"] == "image/png"
     assert "attachment" in response.headers["content-disposition"]
+    assert "graphic-recording-remote-a" in response.headers["content-disposition"]
 
 
 def test_adk_backend_adds_narration_progress(monkeypatch):
